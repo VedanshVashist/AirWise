@@ -33,9 +33,12 @@ def remote(url, payload=None, timeout=12):
     if payload is not None:
         headers["Content-Type"] = "application/json"
         body = json.dumps(payload).encode()
-        if os.getenv("AIRWISE_MODEL_KEY") and url.startswith(os.getenv("AIRWISE_MODEL_URL", "about:blank").rstrip("/") + "/"):
-            headers["Authorization"] = "Bearer " + os.environ["AIRWISE_MODEL_KEY"]
-    with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers), timeout=timeout) as result:
+    request = urllib.request.Request(url, data=body, headers=headers)
+    model_url = os.getenv("AIRWISE_MODEL_URL")
+    model_key = os.getenv("AIRWISE_MODEL_KEY")
+    if body is not None and model_url and model_key and url == model_url.rstrip("/") + "/chat/completions":
+        request.add_unredirected_header("Authorization", "Bearer " + model_key)
+    with urllib.request.urlopen(request, timeout=timeout) as result:
         return json.load(result)
 
 

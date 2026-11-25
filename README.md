@@ -35,3 +35,7 @@ The application binds to the loopback interface. Household preferences and actio
 - [AirNow US AQI categories](https://www.airnow.gov/aqi/aqi-basics/) and [EPA cleaner indoor air guidance](https://www.epa.gov/wildfires/how-create-cleaner-air-room-home)
 - [Qwen model and license](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF) and [llama.cpp runtime](https://github.com/ggml-org/llama.cpp)
 - DM Sans is distributed under the SIL Open Font License in `public/FONT-LICENSE.txt`. The Delhi skyline is generated artwork.
+
+## License
+
+Airwise's original code and documentation use the [MIT License](LICENSE). The bundled DM Sans font uses the [SIL Open Font License](public/FONT-LICENSE.txt).

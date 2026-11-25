@@ -10,5 +10,11 @@ venv/
 
 # Local configuration and logs
 .env
-.env.local
+.env.*
+.aws/
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
 *.log
