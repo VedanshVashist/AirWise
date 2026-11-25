@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#112a2c">
+  <title>Airwise · Air quality overview</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+  <script defer src="interactions.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <div id="scrim"></div>
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="#overview" aria-label="Airwise overview"><img src="icon.svg" alt="">Airwise<span>.</span></a>
+    <nav aria-label="Main navigation">
+      <div class="navlabel">Workspace</div>
+      <a href="#overview" data-nav="overview"><i data-i="grid"></i>Overview</a>
+      <a href="#forecast" data-nav="forecast"><i data-i="chart"></i>Air forecast</a>
+      <a href="#plan" data-nav="plan"><i data-i="leaf"></i>Action plan</a>
+      <a href="#assistant" data-nav="assistant"><i data-i="spark"></i>AI assistant</a>
+      <div class="navlabel second">Preferences</div>
+      <a href="#alerts" data-nav="alerts"><i data-i="bell"></i>Air alerts</a>
+      <a href="#household" data-nav="household"><i data-i="users"></i>Household</a>
+    </nav>
+    <div class="sidebottom"><div class="sidelocation"><span class="status-dot"></span>Saved location</div><div class="sidecity" id="sidecity">New Delhi, India</div></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar">
+      <div class="crumb"><button class="mobile-menu iconbutton" id="menu" aria-label="Open navigation"><i data-i="menu"></i></button><i data-i="panel"></i><span>Workspace</span><i data-i="chevRight"></i><b id="crumb">Overview</b></div>
+      <div class="toptools"><span id="date"></span><span class="bar"></span><a class="iconbutton" href="#alerts" aria-label="Open air alerts"><i data-i="bell"></i></a><a class="avatar" href="#household" aria-label="Household profile"><i data-i="users"></i></a></div>
+    </header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+  <dialog id="dialog"><div id="dialogContent"></div></dialog>
+  <div id="notice" role="status"></div>
+</body>
+</html>

@@ -1,0 +1,3 @@
+.airwise/
+__pycache__/
+*.log
