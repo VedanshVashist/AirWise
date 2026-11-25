@@ -1,3 +1,14 @@
+# Downloaded AI runtime, model weights and local alert history
 .airwise/
+
+# Python bytecode and local virtual environments
 __pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Local configuration and logs
+.env
+.env.local
 *.log

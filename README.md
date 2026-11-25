@@ -1,6 +1,18 @@
 # Airwise
 
-Airwise is a local-first air-quality assistant for households and community groups. Open **Start Airwise.cmd** on Windows, or run `python server.py --open` with Python 3.11 or newer. The dashboard is available at http://localhost:8765.
+Airwise is a local-first air-quality assistant for households and community groups. It shows the current US Air Quality Index (AQI) and hourly forecasts for a location, then suggests actions for the household.
+
+## Quick start
+
+Install Python 3.11 or newer. The dashboard uses the Python standard library and can run without the optional AI model.
+
+On Windows, double-click **Start Airwise.cmd**. From a terminal on any platform, run this command in the project directory (use `python3` if that is your Python command).
+
+```sh
+python server.py --open
+```
+
+The command opens the [local dashboard](http://localhost:8765). If the default port is busy, run `python server.py --port 8766 --open`. Press `Ctrl+C` in the terminal to stop the server.
 
 ## Using the app
 
@@ -11,7 +23,7 @@ Airwise is a local-first air-quality assistant for households and community grou
 
 ## Local AI
 
-This workspace includes the Windows x64 CPU runtime and Qwen2.5-1.5B-Instruct in the ignored `.airwise/ai` directory. On a fresh checkout run `python setup_ai.py` to download and verify the runtime and model (about 1.15 GB). The app starts inference on demand. The first answer can take longer while the model loads.
+On Windows x64, run `python setup_ai.py` to download and verify the CPU runtime and Qwen2.5-1.5B-Instruct model (about 1.15 GB). The installer stores them in `.airwise/ai/`. The app starts inference on demand. The first answer can take longer while the model loads.
 
 To use another inference server, set `AIRWISE_MODEL_URL` to its OpenAI-compatible base URL including `/v1`, and set `AIRWISE_MODEL` to its model name. Set `AIRWISE_MODEL_KEY` only if the service requires it. That server must support structured JSON outputs. Using a remote model sends the question, recent conversation, location name, AQI and selected lifestyle preferences to that provider.
 
