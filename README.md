@@ -15,6 +15,8 @@ The dashboard, city search, browser alerts and built-in guide work without API k
 
 ### Challenge vertical and campaign studio
 
+**Generative AI use.** OpenAI Codex wrote the headlines, captions and calls to action for three ready-to-share clean-air campaigns during development. Campaign Studio includes the completed copy for school families, commuters and neighbours. Visitors can read each campaign or download its PNG poster without an API key. Airwise lays out the images in the browser.
+
 Airwise targets environmental awareness for households and community organisers. In **Campaign studio**, select school families, commuters or neighbours and create a campaign. Each campaign combines an audience-specific emissions action, an explanation of how ground-level ozone affects trees, and the selected city's modeled US AQI. Airwise includes the observation time and timezone. When only sample or stale data is available it omits the number and points readers to local advisories. The general ozone fact applies to sensitive vegetation and does not attribute today's AQI to a particular pollutant. [EPA ecosystem effects](https://www.epa.gov/ground-level-ozone-pollution/ecosystem-effects-ozone-pollution)
 
 Download the PNG or select and copy its plain-text caption. Review the timestamp before sharing. Airwise composes the poster in the browser. The local template works with zero provider credentials.

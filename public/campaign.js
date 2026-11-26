@@ -5,9 +5,37 @@ const campaignActions = {
 };
 const ecosystemFact = 'Ground-level ozone can slow tree growth by making it harder for sensitive leaves to turn sunlight into energy.';
 
+const readyCampaigns = [
+    {
+        audience: 'School families', title: 'Park. Switch off. Meet them at the gate.',
+        caption: 'Pickup is a good time to catch up with other families. If you’re parked and waiting, switch off your engine. Children waiting by the gate will have one less tailpipe running beside them.',
+        action: 'Share this reminder in the school pickup group.', file: 'school-gate'
+    },
+    {
+        audience: 'Commuters', title: 'Two errands, one trip',
+        caption: 'A pharmacy stop on the way home can save a separate drive tomorrow. Look at the errands on your list and pair two that take you in the same direction.',
+        action: 'Pick the two stops you’ll combine this week.', file: 'two-errands'
+    },
+    {
+        audience: 'Neighbours', title: 'Clean air for the trees on our street',
+        caption: 'Trees need sunlight to grow. Ground-level ozone can make it harder for sensitive leaves to use that light. Vehicle exhaust contributes to the pollution that forms ozone.',
+        action: 'Planning a trip to the shops? Offer a neighbour a lift so one car can stay parked.', file: 'street-trees'
+    }
+];
+
+function campaignLibrary() {
+    return `<section aria-labelledby="libraryTitle"><h2 id="libraryTitle">Ready-to-share campaigns</h2>
+        <p class="muted">OpenAI Codex drafted these campaigns during development. Choose a caption or download its poster.</p>
+        <div class="actiongrid">${readyCampaigns.map((item, index) => `<article class="action">
+          <span class="eyebrow">${esc(item.audience)}</span><h3>${esc(item.title)}</h3>
+          <p>${esc(item.caption)}</p><p><strong>${esc(item.action)}</strong></p>
+          <button class="button" data-poster="${index}" aria-label="Download PNG for ${esc(item.title)}">Download PNG</button>
+        </article>`).join('')}</div></section>`;
+}
+
 function campaign() {
     return head('Campaign studio', 'Create a clean-air message for your community.', locationButton()) +
-        `<form id="campaignForm" class="card formcard wide">
+        campaignLibrary() + `<div class="sectionhead"><h2>Create a local campaign</h2></div><form id="campaignForm" class="card formcard wide">
         <label class="field"><span>Who will see your campaign?</span><select name="audience">${options(Object.keys(campaignActions), profile.household === 'Family with children' ? 'School families' : 'Neighbours')}</select></label>
         <button class="primary">Create campaign</button></form>
         <div role="status" id="campaignStatus"></div><div id="campaignOutput" class="wide"></div>`;
@@ -56,6 +84,19 @@ function renderPoster(canvas, lines) {
         ctx.fillText(line, 70, y, 940);
     });
 }
+
+document.addEventListener('click', event => {
+    const button = event.target.closest('[data-poster]');
+    if (!button) return;
+    const item = readyCampaigns[Number(button.dataset.poster)];
+    const canvas = document.createElement('canvas');
+    renderPoster(canvas, [[`Airwise  /  ${item.audience}`, 32, true], [item.title, 68, true],
+        [item.caption, 38], [item.action, 42, true]]);
+    const link = document.createElement('a');
+    link.download = `airwise-${item.file}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+});
 
 document.addEventListener('submit', async event => {
     const form = event.target;
