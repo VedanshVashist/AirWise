@@ -13,6 +13,29 @@ The dashboard, city search, browser alerts and built-in guide work without API k
 
 ## Run locally
 
+### Challenge vertical and campaign studio
+
+Airwise targets environmental awareness for households and community organisers. In **Campaign studio**, select school families, commuters or neighbours and create a campaign. Each campaign combines an audience-specific emissions action, an explanation of how ground-level ozone affects trees, and the selected city's modeled US AQI. Airwise includes the observation time and timezone. When only sample or stale data is available it omits the number and points readers to local advisories. The general ozone fact applies to sensitive vegetation and does not attribute today's AQI to a particular pollutant. [EPA ecosystem effects](https://www.epa.gov/ground-level-ozone-pollution/ecosystem-effects-ozone-pollution)
+
+Download the PNG or select and copy its plain-text caption. Review the timestamp before sharing. Airwise composes the poster in the browser. The local template works with zero provider credentials.
+
+### Enable OpenAI campaign headlines
+
+Sign in to the OpenAI API platform as the project owner and create a dedicated project key with write access to Chat Completions. Configure the following **server environment variables** in Vercel and redeploy, or provide them to the local Python process. The app never asks visitors for account credentials. API usage has separate billing from ChatGPT. [API key safety](https://help.openai.com/en/articles/5112595-best-practices-for-api-key-safety) · [Billing](https://help.openai.com/en/articles/9039756-managing-billing-for-chatgpt-and-the-api-platform)
+
+| Variable | Purpose |
+| --- | --- |
+| `OPENAI_API_KEY` | Dedicated secret for campaign headlines. Set it only in the backend environment. |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | HTTPS endpoint and write token for a dedicated Upstash Redis database with eviction disabled. |
+| `AIRWISE_CAMPAIGN_DAILY_LIMIT` | Optional maximum OpenAI campaign calls across all visitors per UTC day. Defaults to 25. Set to 0 to disable. |
+| `AIRWISE_CAMPAIGN_MODEL` | Optional Chat Completions model. Defaults to `gpt-4.1-mini`. |
+
+Every paid campaign call first reserves a slot in a shared Redis transaction. Anyone using the public app can consume these slots. Failed model calls also use a slot. Missing credentials, exhausted quota and provider failures select a labeled template. OpenAI receives the selected audience and a fixed writing instruction. The city, coordinates and AQI stay out of that request. The separate assistant endpoint has its own configuration and does not use the campaign key. [Upstash REST API](https://upstash.com/docs/redis/features/restapi)
+
+Run `python -m unittest -v` for offline campaign-provider and quota tests. Run `node --test campaign.test.cjs` for the freshness and attribution checks.
+
+### Start the server
+
 Install Python 3.11 or newer. The dashboard uses the Python standard library and can run without the optional AI model.
 
 On Windows, double-click **Start Airwise.cmd**. From a terminal on any platform, run this command in the project directory (use `python3` if that is your Python command).

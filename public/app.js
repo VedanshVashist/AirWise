@@ -95,6 +95,7 @@ const titles = {
     forecast: 'Air forecast',
     plan: 'Action plan',
     assistant: 'AI assistant',
+    campaign: 'Campaign studio',
     alerts: 'Air alerts',
     household: 'Household'
 };

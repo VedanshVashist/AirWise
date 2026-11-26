@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
+from campaign_service import campaign_headline
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -359,6 +360,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.json_response({"error": "Invalid request size."}, 413)
             data = json.loads(self.rfile.read(length))
             path = urlsplit(self.path).path
+            if path == "/api/campaign":
+                return self.json_response(campaign_headline(data))
             if path == "/api/assistant":
                 if self.hosted and not os.getenv("AIRWISE_MODEL_URL"):
                     return self.json_response({"error": "Hosted AI is not configured."}, 503)
