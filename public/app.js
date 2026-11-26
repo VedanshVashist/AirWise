@@ -253,8 +253,10 @@ const pollutants = [
     ['O₃', 'ozone', '#8fa981']
 ];
 
+let sensorStatus = 'Checking nearby sensors…';
+
 function pollution() {
-    return `<section class="card pollutants">${cardTitle('layers','Pollutant levels')}<div class="sub">Outdoor concentrations in µg/m³</div><div class="pollgrid">${pollutants.map(([label,k,c])=>`<div class="polltile" style="--color:${c}"><strong>${label}</strong><div><b>${Number.isFinite(data?.current[k])?data.current[k].toFixed(1):'–'}</b><small>µg/m³</small></div></div>`).join('')}</div></section>`;
+    return `<section class="card pollutants">${cardTitle('layers','Pollutant levels')}<div class="sub">Open-Meteo estimates in µg/m³</div><div class="pollgrid">${pollutants.map(([label,k,c])=>`<div class="polltile" style="--color:${c}"><strong>${label}</strong><div><b>${Number.isFinite(data?.current[k])?data.current[k].toFixed(1):'–'}</b><small>µg/m³</small></div></div>`).join('')}</div><p class="sub"><a href="https://sensor.community/" target="_blank" rel="noreferrer">Sensor.Community</a> · ${esc(sensorStatus)}</p></section>`;
 }
 
 function completed(a) {

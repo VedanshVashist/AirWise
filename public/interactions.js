@@ -56,9 +56,26 @@ function refreshDataViews() {
 function cacheKey() {
     return 'air/' + loc.lat + '/' + loc.lon;
 }
+async function loadObservation(seq) {
+    try {
+        const result = await api(`observation?lat=${encodeURIComponent(loc.lat)}&lon=${encodeURIComponent(loc.lon)}`);
+        if (seq !== airRequest) return;
+        const reading = result.observation;
+        sensorStatus = reading
+            ? `Outdoor sensor #${reading.sensor} within 10 km measured PM2.5 at ${reading.pm2_5.toFixed(1)} µg/m³ and PM10 at ${reading.pm10.toFixed(1)} µg/m³ · ${new Date(reading.time * 1000).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', timeZoneName: 'short'})}`
+            : 'No recent outdoor sensor reading within 10 km.';
+    } catch {
+        if (seq !== airRequest) return;
+        sensorStatus = 'Sensor readings are temporarily unavailable.';
+    }
+    if (route() === 'overview') refreshDataViews();
+}
+
 async function loadAir(changed = false) {
     const seq = ++airRequest,
         key = cacheKey();
+    sensorStatus = 'Checking nearby sensors…';
+    loadObservation(seq);
     if (changed || !data) {
         const cached = get(key, null);
         if (cached?.current) {

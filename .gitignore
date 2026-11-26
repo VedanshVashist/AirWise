@@ -9,6 +9,7 @@ __pycache__/
 venv/
 
 # Local configuration and logs
+.vercel/
 .env
 .env.*
 .aws/

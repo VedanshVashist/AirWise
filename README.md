@@ -5,7 +5,13 @@ Airwise is a local-first air-quality assistant for households and community grou
 ## Live Version!
 https://airwise-chi-eight.vercel.app/
 
-## Quick start
+## Deploy to Vercel
+
+Push this repository to your Git provider and import it as a new Vercel project. Select the repository root and the **Other** framework preset, leave the build command empty, and click **Deploy**. Vercel serves the dashboard from `public/` and runs the endpoints in `api/` as Python functions.
+
+The dashboard, city search, browser alerts and built-in guide work without API keys. Hosted alerts require notification permission and an open page. For optional AI replies, add `AIRWISE_MODEL_URL`, `AIRWISE_MODEL` and, if required, `AIRWISE_MODEL_KEY` in the Vercel project's environment settings, then redeploy. Use a hosted endpoint reachable from Vercel that supports OpenAI-compatible chat completions and structured JSON outputs.
+
+## Run locally
 
 Install Python 3.11 or newer. The dashboard uses the Python standard library and can run without the optional AI model.
 
@@ -16,6 +22,10 @@ python server.py --open
 ```
 
 The command opens the [local dashboard](http://localhost:8765). If the default port is busy, run `python server.py --port 8766 --open`. Press `Ctrl+C` in the terminal to stop the server.
+
+## Public air quality API
+
+`GET /api/observation?lat=52.52&lon=13.405` returns the latest outdoor PM2.5 and PM10 measurement within 10 km from [Sensor.Community](https://github.com/opendata-stuttgart/meta/wiki/EN-APIs). The response includes the sensor ID, Unix timestamp and concentration unit. A successful lookup with no qualifying reading returns `observation: null`. The dashboard checks this keyless feed alongside the Open-Meteo AQI every ten minutes. Both providers receive the selected coordinates.
 
 ## Using the app
 

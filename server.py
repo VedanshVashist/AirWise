@@ -3,6 +3,7 @@ import argparse
 import atexit
 import base64
 import json
+import math
 import os
 import socket
 import subprocess
@@ -11,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 import webbrowser
+from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
@@ -66,6 +68,30 @@ def air(location):
             cache.clear()
         cache[coords] = time.time(), result
     return result
+
+
+def observation(location):
+    lat, lon = coordinates(location)
+    rows = remote(f"https://data.sensor.community/airrohr/v1/filter/area={lat},{lon},10")
+    if not isinstance(rows, list):
+        raise RuntimeError("Unexpected sensor response.")
+    now = time.time()
+    latest = None
+    for row in rows:
+        try:
+            if str(row["location"]["indoor"]) != "0":
+                continue
+            stamp = datetime.fromisoformat(row["timestamp"]).replace(tzinfo=timezone.utc).timestamp()
+            if not 0 <= now - stamp <= 900 or (latest and stamp <= latest["time"]):
+                continue
+            values = {v["value_type"]: float(v["value"]) for v in row["sensordatavalues"]
+                      if v["value_type"] in ("P1", "P2")}
+            pm10, pm25 = values["P1"], values["P2"]
+            if all(math.isfinite(v) and v >= 0 for v in (pm10, pm25)):
+                latest = dict(time=int(stamp), sensor=int(row["sensor"]["id"]), pm10=pm10, pm2_5=pm25)
+        except (ValueError, KeyError, TypeError, AttributeError, OverflowError):
+            continue
+    return {"source": "Sensor.Community", "radius_km": 10, "unit": "µg/m³", "observation": latest}
 
 
 def precaution(aqi):
@@ -274,6 +300,8 @@ def answer(data):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    hosted = False
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(PUBLIC), **kwargs)
 
@@ -289,11 +317,15 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path)
         if not path.path.startswith("/api/"):
+            if self.hosted:
+                return self.json_response({"error": "Unknown route."}, 404)
             return super().do_GET()
         q = {k: v[0] for k, v in parse_qs(path.query).items()}
         try:
             if path.path == "/api/air":
                 return self.json_response(air(q))
+            if path.path == "/api/observation":
+                return self.json_response(observation(q))
             if path.path == "/api/locations":
                 name = q.get("q", "").strip()[:100]
                 if len(name) < 2:
@@ -302,6 +334,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.json_response([dict(name=x["name"], country=x.get("country", ""), region=x.get("admin1", ""),
                                                 lat=x["latitude"], lon=x["longitude"]) for x in results.get("results", [])])
             if path.path == "/api/alerts":
+                if self.hosted:
+                    return self.json_response({"desktop": False, "enabled": False, "threshold": 101, "history": []})
                 with lock:
                     return self.json_response({**read_alerts(), "desktop": os.name == "nt"})
             return self.json_response({"error": "Unknown route."}, 404)
@@ -313,8 +347,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         host = self.headers.get("Host", "")
         origin = self.headers.get("Origin")
-        if host.split(":")[0] not in ("localhost", "127.0.0.1") or (origin and urlsplit(origin).netloc != host):
+        if not self.hosted and host.split(":")[0] not in ("localhost", "127.0.0.1"):
             return self.json_response({"error": "Use the local Airwise app."}, 403)
+        if origin and urlsplit(origin).netloc != host:
+            return self.json_response({"error": "Use the same Airwise origin."}, 403)
         if self.headers.get_content_type() != "application/json":
             return self.json_response({"error": "JSON required."}, 415)
         try:
@@ -322,9 +358,14 @@ class Handler(SimpleHTTPRequestHandler):
             if not 0 < length <= 20000:
                 return self.json_response({"error": "Invalid request size."}, 413)
             data = json.loads(self.rfile.read(length))
-            if self.path == "/api/assistant":
+            path = urlsplit(self.path).path
+            if path == "/api/assistant":
+                if self.hosted and not os.getenv("AIRWISE_MODEL_URL"):
+                    return self.json_response({"error": "Hosted AI is not configured."}, 503)
                 return self.json_response(answer(data))
-            if self.path == "/api/alerts":
+            if path == "/api/alerts":
+                if self.hosted:
+                    return self.json_response({"error": "Save browser alerts on this device."}, 400)
                 loc = data["location"]
                 lat, lon = coordinates(loc)
                 threshold = int(data["threshold"])
@@ -343,6 +384,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json_response({"error": "Check the submitted values."}, 400)
         except (RuntimeError, OSError, IndexError):
             return self.json_response({"error": "Service temporarily unavailable."}, 503)
+
+
+class HostedHandler(Handler):
+    hosted = True
+
+    def do_HEAD(self):
+        self.send_error(405)
 
 
 if __name__ == "__main__":

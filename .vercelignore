@@ -1,0 +1,12 @@
+.airwise/
+.venv/
+venv/
+__pycache__/
+.env*
+.aws/
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
