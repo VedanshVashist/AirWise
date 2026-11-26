@@ -2,6 +2,9 @@
 
 Airwise is a local-first air-quality assistant for households and community groups. It shows the current US Air Quality Index (AQI) and hourly forecasts for a location, then suggests actions for the household.
 
+## Live Version!
+https://airwise-chi-eight.vercel.app/
+
 ## Quick start
 
 Install Python 3.11 or newer. The dashboard uses the Python standard library and can run without the optional AI model.
