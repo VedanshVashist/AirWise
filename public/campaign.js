@@ -7,17 +7,17 @@ const ecosystemFact = 'Ground-level ozone can slow tree growth by making it hard
 
 const readyCampaigns = [
     {
-        audience: 'School families', title: 'Park. Switch off. Meet them at the gate.',
+        audience: 'School families', title: 'Switch off at pickup.', alt: 'A parent holding car keys greets a child at the school gate.',
         caption: 'Pickup is a good time to catch up with other families. If you’re parked and waiting, switch off your engine. Children waiting by the gate will have one less tailpipe running beside them.',
         action: 'Share this reminder in the school pickup group.', file: 'school-gate'
     },
     {
-        audience: 'Commuters', title: 'Two errands, one trip',
+        audience: 'Commuters', title: 'Two errands, one trip.', alt: 'An illustrated neighbourhood map connects two errands along a single route.',
         caption: 'A pharmacy stop on the way home can save a separate drive tomorrow. Look at the errands on your list and pair two that take you in the same direction.',
         action: 'Pick the two stops you’ll combine this week.', file: 'two-errands'
     },
     {
-        audience: 'Neighbours', title: 'Clean air for the trees on our street',
+        audience: 'Neighbours', title: 'Cleaner trips. Greener streets.', alt: 'A giant leaf rises over a green neighbourhood.',
         caption: 'Trees need sunlight to grow. Ground-level ozone can make it harder for sensitive leaves to use that light. Vehicle exhaust contributes to the pollution that forms ozone.',
         action: 'Planning a trip to the shops? Offer a neighbour a lift so one car can stay parked.', file: 'street-trees'
     }
@@ -25,11 +25,12 @@ const readyCampaigns = [
 
 function campaignLibrary() {
     return `<section aria-labelledby="libraryTitle"><h2 id="libraryTitle">Ready-to-share campaigns</h2>
-        <p class="muted">OpenAI Codex drafted these campaigns during development. Choose a caption or download its poster.</p>
-        <div class="actiongrid">${readyCampaigns.map((item, index) => `<article class="action">
+        <p class="muted">Download an AI-illustrated poster and share it with the caption below.</p>
+        <div class="actiongrid">${readyCampaigns.map((item) => `<article class="action">
+          <a href="posters/${item.file}.jpg" aria-label="Open full-size poster: ${esc(item.title)}"><img class="campaign-art" src="posters/${item.file}.jpg" width="1254" height="1254" alt="${esc(item.alt)}"></a>
           <span class="eyebrow">${esc(item.audience)}</span><h3>${esc(item.title)}</h3>
           <p>${esc(item.caption)}</p><p><strong>${esc(item.action)}</strong></p>
-          <button class="button" data-poster="${index}" aria-label="Download PNG for ${esc(item.title)}">Download PNG</button>
+          <a class="button" href="posters/${item.file}.jpg" download="airwise-${item.file}.jpg" aria-label="Download poster for ${esc(item.title)}">Download poster</a>
         </article>`).join('')}</div></section>`;
 }
 
@@ -53,11 +54,11 @@ function campaignReading() {
     return `${loc.name} · US AQI ${value} (${bandNames[band(value)]}). Open-Meteo / CAMS estimate, ${time} (${data.timezone || 'UTC'}).`;
 }
 
-function renderPoster(canvas, lines) {
+function renderPoster(canvas, lines, artwork) {
     canvas.width = 1080;
     const ctx = canvas.getContext('2d');
     const rows = [];
-    let y = 80;
+    let y = canvas.width + 80;
     for (const [text, size, bold] of lines) {
         const font = `${bold ? 700 : 400} ${size}px sans-serif`;
         ctx.font = font;
@@ -77,26 +78,13 @@ function renderPoster(canvas, lines) {
     ctx.fillStyle = '#123735';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#a8dda1';
-    ctx.fillRect(0, 0, canvas.width, 16);
+    ctx.drawImage(artwork, 0, 0, canvas.width, canvas.width);
     rows.forEach(({line, font, y}, index) => {
         ctx.font = font;
         ctx.fillStyle = index === 0 ? '#bdecb8' : '#ffffff';
         ctx.fillText(line, 70, y, 940);
     });
 }
-
-document.addEventListener('click', event => {
-    const button = event.target.closest('[data-poster]');
-    if (!button) return;
-    const item = readyCampaigns[Number(button.dataset.poster)];
-    const canvas = document.createElement('canvas');
-    renderPoster(canvas, [[`Airwise  /  ${item.audience}`, 32, true], [item.title, 68, true],
-        [item.caption, 38], [item.action, 42, true]]);
-    const link = document.createElement('a');
-    link.download = `airwise-${item.file}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-});
 
 document.addEventListener('submit', async event => {
     const form = event.target;
@@ -110,7 +98,9 @@ document.addEventListener('submit', async event => {
     form.querySelector('button').disabled = true;
     status.textContent = 'Preparing your campaign…';
     try {
-        const {headline, author} = await api('campaign', {audience});
+        const artwork = new Image();
+        artwork.src = 'posters/' + readyCampaigns.find(item => item.audience === audience).file + '.jpg';
+        const [{headline, author}] = await Promise.all([api('campaign', {audience}), artwork.decode()]);
         if (!form.isConnected) return;
         const parts = [headline, reading, ecosystemFact, action];
         output.innerHTML = `<section class="card"><h2>Campaign preview</h2>
@@ -121,7 +111,7 @@ document.addEventListener('submit', async event => {
         output.querySelector('textarea').value = parts.join('\n\n');
         const canvas = output.querySelector('canvas');
         renderPoster(canvas, [[`Airwise  /  ${audience}`, 32, true], [headline, 68, true],
-            [reading, 35], [ecosystemFact, 38], [action, 42, true]]);
+            [reading, 35], [ecosystemFact, 38], [action, 42, true]], artwork);
         output.querySelector('[download]').href = canvas.toDataURL('image/png');
         status.textContent = `Campaign ready · ${author}`;
     } catch {
