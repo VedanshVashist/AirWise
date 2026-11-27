@@ -1,23 +1,22 @@
 """Airwise local application server. Run with Python 3.11 or later."""
 import argparse
-import atexit
 import base64
 import json
 import math
 import os
-import socket
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
 import webbrowser
-from campaign_service import campaign_headline
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit
 from xml.etree import ElementTree
+
+from campaign_service import campaign_headline
+from http_client import remote
+from model_runtime import inference_url
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / ".airwise"
@@ -27,28 +26,8 @@ MAX_READING_AGE = 7200
 CACHE_TTL = 600
 CACHE_CAPACITY = 100
 cache = {}
-lock = threading.RLock()
-model_lock = threading.Lock()
-model_process = None
-model_url = None
-
-
-def remote(url, payload=None, timeout=12):
-    headers = {"User-Agent": "Airwise/1.0", "Accept": "application/json"}
-    body = None
-    if payload is not None:
-        headers["Content-Type"] = "application/json"
-        body = json.dumps(payload).encode()
-    request = urllib.request.Request(url, data=body, headers=headers)
-    model_url = os.getenv("AIRWISE_MODEL_URL")
-    model_key = os.getenv("AIRWISE_MODEL_KEY")
-    if body is not None and model_url and model_key and url == model_url.rstrip("/") + "/chat/completions":
-        request.add_unredirected_header("Authorization", "Bearer " + model_key)
-    with urllib.request.urlopen(request, timeout=timeout) as result:
-        try:
-            return json.load(result)
-        except ValueError as error:
-            raise RuntimeError("The service returned invalid JSON.") from error
+cache_lock = threading.Lock()
+alerts_lock = threading.Lock()
 
 
 def coordinates(data):
@@ -74,7 +53,7 @@ def fresh_reading(result, now):
 
 def air(location):
     coords = coordinates(location)
-    with lock:
+    with cache_lock:
         saved = cache.get(coords)
         if saved and time.monotonic() - saved[0] < CACHE_TTL and fresh_reading(saved[1], time.time()):
             return saved[1]
@@ -83,7 +62,10 @@ def air(location):
     result = remote("https://air-quality-api.open-meteo.com/v1/air-quality?" + query)
     if not fresh_reading(result, time.time()):
         raise RuntimeError("A fresh reading is unavailable.")
-    with lock:
+    with cache_lock:
+        existing = cache.get(coords)
+        if existing and existing[1]["current"]["time"] > result["current"]["time"] and fresh_reading(existing[1], time.time()):
+            return existing[1]
         if coords not in cache and len(cache) >= CACHE_CAPACITY:
             del cache[min(cache, key=lambda key: cache[key][0])]
         cache[coords] = time.monotonic(), result
@@ -117,6 +99,32 @@ def observation(location):
     return {"source": "Sensor.Community", "radius_km": 10, "unit": "µg/m³", "observation": latest}
 
 
+def search_locations(query):
+    name = query.strip()[:100]
+    if len(name) < 2:
+        return []
+    params = urlencode({"name": name, "count": 8, "language": "en"})
+    result = remote("https://geocoding-api.open-meteo.com/v1/search?" + params)
+    if not isinstance(result, dict) or not isinstance(result.get("results", []), list):
+        raise RuntimeError("Unexpected geocoding response.")
+    locations = []
+    for row in result.get("results", []):
+        if not isinstance(row, dict) or not isinstance(row.get("name"), str) or not row["name"].strip():
+            continue
+        try:
+            lat, lon = coordinates({"lat": row.get("latitude"), "lon": row.get("longitude")})
+        except ValueError:
+            continue
+        locations.append(dict(name=row["name"], lat=lat, lon=lon,
+                              region=row.get("admin1") or "", country=row.get("country") or ""))
+    return locations
+
+
+def rounded_aqi(current):
+    """Match the dashboard's Math.round at category and notification thresholds."""
+    return math.floor(current["us_aqi"] + 0.5)
+
+
 def precaution(aqi):
     if aqi > 300:
         return "Avoid outdoor physical activity and use the cleanest indoor space available."
@@ -143,6 +151,26 @@ def save_alerts(value):
     path = DATA / "alerts.tmp"
     path.write_text(json.dumps(value), encoding="utf8")
     path.replace(DATA / "alerts.json")
+
+
+def configure_alerts(data):
+    loc = data["location"]
+    lat, lon = coordinates(loc)
+    threshold = data["threshold"]
+    if isinstance(threshold, str) and threshold.isdecimal():
+        threshold = int(threshold)
+    if type(threshold) is not int or threshold not in (0, 51, 101, 151, 201, 301):
+        raise ValueError("Invalid alert threshold.")
+    if type(data["enabled"]) is not bool or not isinstance(loc["name"], str):
+        raise ValueError("Invalid alert settings.")
+    with alerts_lock:
+        config = read_alerts()
+        config.update(enabled=data["enabled"] and os.name == "nt", threshold=threshold,
+                      location=dict(lat=lat, lon=lon, name=loc["name"][:80], country=str(loc.get("country", ""))[:80]))
+        config.pop("error", None)
+        save_alerts(config)
+    wake_monitor.set()
+    return config
 
 
 def desktop_notice(title, body):
@@ -176,16 +204,16 @@ wake_monitor = threading.Event()
 def monitor():
     while True:
         try:
-            with lock:
+            with alerts_lock:
                 config = read_alerts()
             if config["enabled"]:
                 loc = config["location"]
                 current = air(loc)["current"]
-                aqi = round(current["us_aqi"])
+                aqi = rounded_aqi(current)
                 stamp = [*coordinates(loc), current["time"]]
                 if aqi >= config["threshold"] and config.get("last") != stamp:
                     body = precaution(aqi)
-                    with lock:
+                    with alerts_lock:
                         check = read_alerts()
                         if check == config:
                             try:
@@ -200,7 +228,7 @@ def monitor():
                                 config["error"] = "Your AQI alert is saved here. Enable Windows notifications for PowerShell to receive desktop alerts."
                             save_alerts(config)
         except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
-            with lock:
+            with alerts_lock:
                 state = read_alerts()
                 if state.get("enabled"):
                     state["error"] = "Airwise could not check the AQI or deliver the latest alert. It will retry."
@@ -209,44 +237,14 @@ def monitor():
         wake_monitor.clear()
 
 
-def inference_url():
-    global model_process, model_url
-    configured = os.getenv("AIRWISE_MODEL_URL")
-    if configured:
-        return configured.rstrip("/")
-    folder = DATA / "ai"
-    binary = folder / "llama-server.exe"
-    model = next(folder.glob("*.gguf"), None)
-    if not binary.exists() or model is None:
-        raise RuntimeError("Local AI has not been installed.")
-    with model_lock:
-        if model_process is not None and model_process.poll() is None:
-            return model_url
-        with socket.socket() as sock:
-            sock.bind(("127.0.0.1", 0))
-            port = sock.getsockname()[1]
-        model_url = f"http://127.0.0.1:{port}/v1"
-        model_process = subprocess.Popen([str(binary), "-m", str(model), "--host", "127.0.0.1", "--port", str(port),
-                                          "-c", "4096", "-np", "1", "-t", str(min(8, os.cpu_count() or 4))],
-                                         cwd=folder, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        for _ in range(120):
-            if model_process.poll() is not None:
-                break
-            try:
-                remote(f"http://127.0.0.1:{port}/health", timeout=1)
-                return model_url
-            except OSError:
-                time.sleep(.5)
-        if model_process.poll() is None:
-            model_process.terminate()
-        raise RuntimeError("Local AI could not start.")
-
-
-@atexit.register
-def stop_model():
-    if model_process and model_process.poll() is None:
-        model_process.terminate()
+def model_content(reply):
+    try:
+        content = reply["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as error:
+        raise RuntimeError("Unexpected model response.") from error
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("The model returned an empty response.")
+    return content.strip()
 
 
 def guided_answer(url, messages, reading, loc, profile):
@@ -278,27 +276,42 @@ def guided_answer(url, messages, reading, loc, profile):
                    "messages": [{"role": "system", "content": instructions}, *messages[1:]],
                    "max_tokens": 72, "temperature": .15, "response_format": {"type": "json_schema",
                    "json_schema": {"name": "air_plan", "strict": True, "schema": schema}}}, timeout=100)
-    ids = json.loads(reply["choices"][0]["message"]["content"])["actions"]
-    lines = [choices[key] for key in dict.fromkeys(ids) if key in choices][:2]
-    if not lines:
-        raise RuntimeError("Empty plan.")
+    try:
+        ids = json.loads(model_content(reply))["actions"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise RuntimeError("Invalid model plan.") from error
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 2 or not all(isinstance(key, str) and key in choices for key in ids):
+        raise RuntimeError("Invalid model actions.")
+    lines = [choices[key] for key in dict.fromkeys(ids)]
     return {"answer": f"The current modeled US AQI in {loc['name']} is {reading}.\n\n" + "\n\n".join(lines),
             "mode": "AI-guided plan"}
 
 
 def answer(data):
-    question = str(data.get("question", "")).strip()[:1200]
-    if not question:
+    question = data.get("question")
+    if not isinstance(question, str) or not question.strip():
         raise ValueError("Enter a question.")
+    question = question.strip()[:1200]
     loc = data["location"]
     coordinates(loc)
+    if not isinstance(loc.get("name"), str) or not loc["name"].strip():
+        raise ValueError("Choose a named location.")
+    profile = data.get("profile", {})
+    history = data.get("history", [])
+    if not isinstance(profile, dict) or not isinstance(history, list):
+        raise ValueError("Invalid assistant context.")
+    turns = []
+    for item in history[-4:]:
+        if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+            raise ValueError("Invalid conversation history.")
+        if item.get("role") in ("user", "assistant"):
+            turns.append({"role": item["role"], "content": item["content"][:900]})
     aqi = None
     try:
-        aqi = round(air(loc)["current"]["us_aqi"])
+        aqi = rounded_aqi(air(loc)["current"])
         status = f"Current modeled US AQI {aqi}. {precaution(aqi)}"
     except (OSError, RuntimeError, KeyError):
         status = "Current AQI unavailable. Ask the user to check their local advisory before going outside."
-    profile = data.get("profile", {})
     context = (f"Location: {str(loc['name'])[:80]}. {status} Household: {str(profile.get('household',''))[:80]}. "
                f"Travel: {str(profile.get('travel',''))[:80]}. Indoor filtration: {str(profile.get('home',''))[:80]}.")
     system = ("You are Airwise, a household air-quality assistant. Use the supplied context to answer the question directly in 2-4 short sentences. "
@@ -306,20 +319,14 @@ def answer(data):
               "For indoor particles suggest a room-sized HEPA cleaner, avoiding smoke and candles, and ventilating when outside air improves. "
               "Combine trips or share a ride to reduce fuel use. Never recommend strenuous outdoor activity in unhealthy air. "
               "Never diagnose or suggest drugs. For severe breathing difficulty or chest pain advise urgent local emergency care.")
-    messages = [{"role": "system", "content": system}]
-    for item in data.get("history", [])[-4:]:
-        if item.get("role") in ("user", "assistant"):
-            messages.append({"role": item["role"], "content": str(item["content"])[:900]})
+    messages = [{"role": "system", "content": system}, *turns]
     messages.append({"role": "user", "content": context + "\nQuestion: " + question})
     url = inference_url()
     if aqi is not None and aqi > 100:
         return guided_answer(url, messages, aqi, loc, profile)
     reply = remote(url + "/chat/completions", {"model": os.getenv("AIRWISE_MODEL", "local"),
                    "messages": messages, "max_tokens": 230, "temperature": .35}, timeout=120)
-    response = reply["choices"][0]["message"]["content"].strip()
-    if not response:
-        raise RuntimeError("The model returned an empty response.")
-    return {"answer": response, "mode": "AI response"}
+    return {"answer": model_content(reply), "mode": "AI response"}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -327,6 +334,12 @@ class Handler(SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(PUBLIC), **kwargs)
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        super().end_headers()
 
     def json_response(self, data, code=200):
         raw = json.dumps(data, ensure_ascii=False).encode()
@@ -350,16 +363,11 @@ class Handler(SimpleHTTPRequestHandler):
             if path.path == "/api/observation":
                 return self.json_response(observation(q))
             if path.path == "/api/locations":
-                name = q.get("q", "").strip()[:100]
-                if len(name) < 2:
-                    return self.json_response([])
-                results = remote("https://geocoding-api.open-meteo.com/v1/search?" + urlencode({"name": name, "count": 8, "language": "en"}))
-                return self.json_response([dict(name=x["name"], country=x.get("country", ""), region=x.get("admin1", ""),
-                                                lat=x["latitude"], lon=x["longitude"]) for x in results.get("results", [])])
+                return self.json_response(search_locations(q.get("q", "")))
             if path.path == "/api/alerts":
                 if self.hosted:
                     return self.json_response({"desktop": False, "enabled": False, "threshold": 101, "history": []})
-                with lock:
+                with alerts_lock:
                     return self.json_response({**read_alerts(), "desktop": os.name == "nt"})
             return self.json_response({"error": "Unknown route."}, 404)
         except (ValueError, KeyError):
@@ -381,6 +389,8 @@ class Handler(SimpleHTTPRequestHandler):
             if not 0 < length <= 20000:
                 return self.json_response({"error": "Invalid request size."}, 413)
             data = json.loads(self.rfile.read(length))
+            if not isinstance(data, dict):
+                raise ValueError("Expected a JSON object.")
             path = urlsplit(self.path).path
             if path == "/api/campaign":
                 return self.json_response(campaign_headline(data))
@@ -391,19 +401,7 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/alerts":
                 if self.hosted:
                     return self.json_response({"error": "Save browser alerts on this device."}, 400)
-                loc = data["location"]
-                lat, lon = coordinates(loc)
-                threshold = int(data["threshold"])
-                if threshold not in (0, 51, 101, 151, 201, 301) or not isinstance(data["enabled"], bool):
-                    raise ValueError()
-                with lock:
-                    config = read_alerts()
-                    config.update(enabled=data["enabled"] and os.name == "nt", threshold=threshold,
-                                  location=dict(lat=lat, lon=lon, name=str(loc["name"])[:80], country=str(loc.get("country", ""))[:80]))
-                    config.pop("error", None)
-                    save_alerts(config)
-                wake_monitor.set()
-                return self.json_response(config)
+                return self.json_response(configure_alerts(data))
             return self.json_response({"error": "Unknown route."}, 404)
         except (ValueError, KeyError, TypeError, AttributeError):
             return self.json_response({"error": "Check the submitted values."}, 400)

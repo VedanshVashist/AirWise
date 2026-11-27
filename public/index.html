@@ -17,6 +17,7 @@
   <a class="skip" href="#main">Skip to content</a>
   <div id="scrim"></div>
   <aside class="sidebar" id="sidebar">
+    <button class="mobile-menu iconbutton" id="close-menu" aria-label="Close navigation"><i data-i="close"></i></button>
     <a class="brand" href="#overview" aria-label="Airwise overview"><img src="icon.svg" alt="">Airwise<span>.</span></a>
     <nav aria-label="Main navigation">
       <div class="navlabel">Workspace</div>
@@ -33,7 +34,7 @@
   </aside>
   <div class="workspace">
     <header class="topbar">
-      <div class="crumb"><button class="mobile-menu iconbutton" id="menu" aria-label="Open navigation"><i data-i="menu"></i></button><i data-i="panel"></i><span>Workspace</span><i data-i="chevRight"></i><b id="crumb">Overview</b></div>
+      <div class="crumb"><button class="mobile-menu iconbutton" id="menu" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><i data-i="menu"></i></button><i data-i="panel"></i><span>Workspace</span><i data-i="chevRight"></i><b id="crumb">Overview</b></div>
       <div class="toptools"><span id="date"></span><span class="bar"></span>
         <button type="button" class="iconbutton" id="theme-toggle" aria-label="Dark mode" aria-pressed="false" title="Toggle dark mode">
           <svg class="ic moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.8 8.8 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg>

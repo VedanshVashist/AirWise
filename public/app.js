@@ -161,11 +161,20 @@ function sample() {
     };
 }
 
+const outdoorTips = [
+    ['Plan outdoor activity', 'Conditions generally support outdoor activity.'],
+    ['Plan outdoor activity', 'Take breaks if you are unusually sensitive.'],
+    ['Adjust outdoor activity', 'Sensitive groups should shorten intense outings.'],
+    ['Limit outdoor exertion', 'Shorten strenuous outings and take more breaks.'],
+    ['Move workouts indoors', 'Avoid strenuous activity outdoors today.'],
+    ['Move activity indoors', 'Avoid physical activity outdoors until air improves.']
+];
+
 function precautions() {
-    const n = aqi(),
+    const n = currentEstimate(source, data?.current),
         b = n === null ? -1 : band(n),
         sensitive = profile.household !== 'Adults';
-    const exercise = b === -1 ? ['Check local advisories', 'Confirm the AQI before planning outdoor exercise.'] : b >= 5 ? ['Move activity indoors', 'Avoid physical activity outdoors until air improves.'] : b >= 4 ? ['Move workouts indoors', 'Avoid strenuous activity outdoors today.'] : b >= 3 ? ['Limit outdoor exertion', 'Shorten strenuous outings and take more breaks.'] : b === 2 ? ['Adjust outdoor activity', 'Sensitive groups should shorten intense outings.'] : ['Plan outdoor activity', b === 0 ? 'Conditions generally support outdoor activity.' : 'Take breaks if you are unusually sensitive.'];
+    const exercise = outdoorTips[b] ?? ['Check local advisories', 'Confirm the AQI before planning outdoor exercise.'];
     const indoor = b >= 2 ? ['Keep indoor air cleaner', profile.home === 'Air purifier available' ? 'Run a room-sized filter where you spend time.' : 'Skip incense, candles, and smoky cooking.'] : ['Reduce indoor particles', 'Use an exhaust hood vented outdoors when cooking.'];
     const family = b >= 2 ? [sensitive ? 'Protect your household' : 'Check on sensitive groups', sensitive ? 'Choose a cleaner indoor space for longer activities.' : 'Children and older adults may need extra care.'] : ['Check before heading out', 'Review the forecast before a long outing.'];
     return [
@@ -175,23 +184,59 @@ function precautions() {
     ];
 }
 
+function travelAction(travel, elevatedOrUnknown) {
+    if (travel === 'Car') {
+        return ['Combine your errands', 'Group nearby stops into one trip and switch off the engine while parked.',
+            'Fewer starts and less idling reduce fuel burned and exhaust near homes.'];
+    }
+    if (travel === 'Public transport') {
+        return ['Take one shared route', 'Combine errands along one transit route. Wait away from idling vehicles.',
+            'Sharing a vehicle can cut per-person emissions and reduce traffic.'];
+    }
+    return ['Choose quieter streets', elevatedOrUnknown
+        ? 'Use a shorter, lower-traffic route for essential trips. Defer vigorous cycling.'
+        : 'Walk or cycle on a quiet route for a nearby errand.',
+        'A quieter route reduces time beside exhaust. Replacing a car trip avoids tailpipe emissions.'];
+}
+
+function indoorAction(home) {
+    if (home === 'Air purifier available') {
+        return ['Filter your main room', 'Run a correctly sized HEPA cleaner in the room your household uses most.',
+            'Filtration removes airborne particles from the air that passes through the unit.'];
+    }
+    return ['Skip indoor smoke', 'Choose an unlit decoration instead of incense or candles today.',
+        'Avoiding combustion prevents fine particles from entering your indoor air.'];
+}
+
+function routineAction(group, reading) {
+    if (reading === null) {
+        return ['Check local advisories', 'Look up a current reading before scheduling outdoor activity.',
+            'Local readings help your household plan when and where to spend time outdoors.'];
+    }
+    if (group === 'Community group') {
+        return ['Plan a shared activity', reading > 100 ? 'Move the group session to a cleaner indoor space.'
+            : 'Choose a nearby meeting place reachable by transit.',
+            'A shared local venue can shorten trips and help people limit exposure.'];
+    }
+    if (reading > 100) {
+        return [group === 'Family with children' ? 'Move playtime indoors' : 'Move exercise indoors',
+            'Choose gentle movement in a cleaner room and recheck the AQI before heading out.',
+            'Less time exerting outdoors reduces the amount of polluted air inhaled.'];
+    }
+    return ['Walk a nearby errand', 'Choose a nearby destination and check the AQI before leaving.',
+        'Replacing a short car journey avoids the exhaust from that trip.'];
+}
+
 function actions() {
-    let n = aqi(),
-        bad = n === null || n > 100,
-        travel = profile.travel,
-        group = profile.household,
-        filter = profile.home === 'Air purifier available';
-    let trip = travel === 'Car' ? ['Combine your errands', 'Group nearby stops into one trip and switch off the engine while parked.', 'Fewer starts and less idling reduce fuel burned and exhaust near homes.'] : travel === 'Public transport' ? ['Take one shared route', 'Combine errands along one transit route. Wait away from idling vehicles.', 'Sharing a vehicle can cut per-person emissions and reduce traffic.'] : ['Choose quieter streets', bad ? 'Use a shorter, lower-traffic route for essential trips. Defer vigorous cycling.' : 'Walk or cycle on a quiet route for a nearby errand.', 'A quieter route reduces time beside exhaust. Replacing a car trip avoids tailpipe emissions.'];
-    let inside = filter ? ['Filter your main room', 'Run a correctly sized HEPA cleaner in the room your household uses most.', 'Filtration removes airborne particles from the air that passes through the unit.'] : ['Skip indoor smoke', 'Choose an unlit decoration instead of incense or candles today.', 'Avoiding combustion prevents fine particles from entering your indoor air.'];
-    let community = group === 'Community group' ? ['Plan a shared activity', bad ? 'Move the group session to a cleaner indoor space.' : 'Choose a nearby meeting place reachable by transit.', 'A shared local venue can shorten trips and help people limit exposure.'] : bad ? [group === 'Family with children' ? 'Move playtime indoors' : 'Move exercise indoors', 'Choose gentle movement in a cleaner room and recheck the AQI before heading out.', 'Less time exerting outdoors reduces the amount of polluted air inhaled.'] : ['Walk a nearby errand', 'Choose a nearby destination and check the AQI before leaving.', 'Replacing a short car journey avoids the exhaust from that trip.'];
-    return [trip, inside, community].map(([title, detail, impact], i) => ({
-        id: [travel, profile.home, bad + '-' + group][i] + '-' + i,
-        title,
-        detail,
-        impact,
-        tag: ['Low-emission travel', 'Indoor air', 'Daily routine'][i],
-        icon: ['bus', 'home', 'leaf'][i]
-    }));
+    const {travel, home, household} = profile;
+    const reading = currentEstimate(source, data?.current);
+    const elevated = reading > 100;
+    const routineKey = reading === null ? 'unknown' : String(elevated);
+    return [
+        [travel + '-0', 'Low-emission travel', 'bus', travelAction(travel, reading === null || elevated)],
+        [home + '-1', 'Indoor air', 'home', indoorAction(home)],
+        [routineKey + '-' + household + '-2', 'Daily routine', 'leaf', routineAction(household, reading)]
+    ].map(([id, tag, icon, [title, detail, impact]]) => ({id, tag, icon, title, detail, impact}));
 }
 
 function locationButton() {
@@ -270,7 +315,7 @@ function overview() {
 }
 
 function forecast() {
-    return head('Air forecast', 'Explore upcoming conditions in local time.', locationButton()) + `<div class="stack wide">${chart()}<section class="card"><h2>Hourly breakdown</h2><p class="sub">${esc(source)} · ${esc(data?.timezone||'Local time')}</p><div class="tablewrap"><table><thead><tr><th>Local time</th><th>US AQI</th><th>Air quality</th></tr></thead><tbody>${points().map(p=>`<tr><td>${localTime(p.t,{weekday:'short',hour:'numeric',minute:'2-digit'})}</td><td>${Math.round(p.v)}</td><td>${bandNames[band(p.v)]}</td></tr>`).join('')}</tbody></table></div></section></div>`;
+    return head('Air forecast', 'Explore upcoming conditions in local time.', locationButton()) + `<div class="stack wide">${chart()}<section class="card"><h2>Hourly breakdown</h2><p class="sub">${esc(source)} · ${esc(data?.timezone||'Local time')}</p><div class="tablewrap"><table><thead><tr><th>Local time</th><th>US AQI</th><th>Air quality</th></tr></thead><tbody>${points().map(p=>`<tr><td>${localTime(p.t,{weekday:'short',hour:'numeric',minute:'2-digit'})}</td><td>${Math.round(p.v)}</td><td>${bandNames[band(Math.round(p.v))]}</td></tr>`).join('')}</tbody></table></div></section></div>`;
 }
 
 function plan() {

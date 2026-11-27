@@ -8,6 +8,10 @@ function isFreshReading(current, now = Date.now() / 1000) {
     return hasReading(current) && current.time <= now && now - current.time <= 7200;
 }
 
+function currentEstimate(source, current) {
+    return source === 'Current estimate' && isFreshReading(current) ? Math.round(current.us_aqi) : null;
+}
+
 function forecastPoints(report, hours) {
     const start = report?.current?.time;
     const hourly = report?.hourly;

@@ -74,7 +74,11 @@ python -m unittest discover -v
 node --test
 ```
 
-Python tests exercise the hosted HTTP handler on a temporary loopback port, AQI cache expiry, sensor selection, and campaign provider and quota behavior. Node tests cover dashboard refreshes and outages, hourly forecast windows, and campaign attribution. The GitHub Actions workflow runs both suites on Windows and Ubuntu for pushes and pull requests.
+Python tests exercise the hosted HTTP handler on a temporary loopback port, including city search, AQI cache expiry, sensor selection, assistant responses and campaign quotas. They also check that invalid desktop alert settings preserve the last saved configuration.
+
+When Chrome or Chromium is installed, the Python suite opens a temporary headless browser profile, selects the commuter campaign, and verifies the generated PNG and its transcript during a simulated air-data outage. This browser test is skipped if the executable is unavailable.
+
+Node tests cover dashboard refreshes and outages, forecast windows, campaign attribution, keyboard focus and mobile navigation. The GitHub Actions workflow runs both suites on Windows and Ubuntu for pushes and pull requests.
 
 ## Sources
 

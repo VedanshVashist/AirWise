@@ -15,7 +15,15 @@ function dashboard(getAir) {
         addEventListener() {},
         querySelectorAll: () => [],
         querySelector(selector) {
-            if (!elements.has(selector)) elements.set(selector, { addEventListener() {} });
+            if (!elements.has(selector)) {
+                const classes = new Set();
+                elements.set(selector, {
+                    classList: { contains: name => classes.has(name), toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } },
+                    addEventListener(type, listener) { this[type] = listener; },
+                    setAttribute(name, value) { this[name] = value; },
+                    focus() { document.activeElement = this; }
+                });
+            }
             return elements.get(selector);
         }
     };
@@ -29,7 +37,8 @@ function dashboard(getAir) {
         }
     });
     for (const name of scripts) vm.runInContext(readFileSync('public/' + name, 'utf8'), context, { filename: name });
-    return { markup: () => elements.get('#main').innerHTML, refresh: () => context.loadAir() };
+    document.body = document.querySelector('body');
+    return { markup: () => elements.get('#main').innerHTML, refresh: () => context.loadAir(), elements, context };
 }
 
 test('overview moves from sample to current to saved when the provider goes offline', async () => {
@@ -39,14 +48,39 @@ test('overview moves from sample to current to saved when the provider goes offl
         return { current: { time: Math.floor(Date.now() / 1000), us_aqi: 42 }, hourly: { time: [0] } };
     });
     assert.match(page.markup(), /Sample data/);
+    assert.match(page.markup(), /Confirm the AQI before planning outdoor exercise/);
     await nextTurn();
     assert.match(page.markup(), /Current estimate/);
+    assert.match(page.markup(), /Conditions generally support outdoor activity/);
     assert.match(page.markup(), /class="aqinum">42</);
     assert.match(page.markup(), /Hourly estimates will appear/);
     online = false;
     await page.refresh();
     assert.match(page.markup(), /Saved reading/);
+    assert.match(page.markup(), /Confirm the AQI before planning outdoor exercise/);
     assert.match(page.markup(), /class="aqinum">42</);
+});
+
+test('skip link moves focus into the active page and preserves the forecast route', () => {
+    const {context, elements} = dashboard(() => ({}));
+    context.location.hash = '#forecast';
+    context.render();
+    let prevented = false;
+    elements.get('.skip').click({ preventDefault() { prevented = true; } });
+    assert.ok(prevented);
+    assert.equal(context.location.hash, '#forecast');
+    assert.equal(context.document.activeElement, elements.get('#main'));
+});
+
+test('mobile navigation moves and restores focus and isolates background controls', () => {
+    const {context, elements} = dashboard(() => ({}));
+    elements.get('#menu').onclick();
+    assert.equal(elements.get('.workspace').inert, true);
+    assert.equal(elements.get('#menu')['aria-expanded'], 'true');
+    assert.equal(context.document.activeElement, elements.get('#sidebar [aria-current="page"]'));
+    elements.get('#close-menu').onclick();
+    assert.equal(elements.get('.workspace').inert, false);
+    assert.equal(context.document.activeElement, elements.get('#menu'));
 });
 
 test('an older request finishing last cannot overwrite the latest dashboard reading', async () => {

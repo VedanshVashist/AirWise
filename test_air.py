@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from threading import Thread
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import server
@@ -40,6 +42,23 @@ class AirDataTests(unittest.TestCase):
         self.assertEqual(server.air(LOCATION)["current"]["us_aqi"], 0)
         self.clock.return_value += 1
         self.assertEqual(server.air(LOCATION)["current"]["us_aqi"], 42)
+
+    def test_late_provider_response_preserves_newer_cached_reading(self):
+        def finish_request(url):
+            # A second request has completed since the first cache lookup.
+            server.cache[server.coordinates(LOCATION)] = (100, report(NOW, 75))
+            return report(NOW - 3600, 42)
+
+        self.remote.side_effect = finish_request
+        self.assertEqual(server.air(LOCATION)["current"]["us_aqi"], 75)
+        self.assertEqual(server.air(LOCATION)["current"]["us_aqi"], 75)
+        self.remote.assert_called_once()
+
+    def test_half_point_aqi_crosses_the_same_thresholds_as_the_dashboard(self):
+        for boundary in [50, 100, 150, 200, 300]:
+            with self.subTest(boundary=boundary):
+                self.assertEqual(server.rounded_aqi({"us_aqi": boundary + .49}), boundary)
+                self.assertEqual(server.rounded_aqi({"us_aqi": boundary + .5}), boundary + 1)
 
     def test_invalid_upstream_data_is_never_cached(self):
         for value in [None, {}, report(NOW + 1), report(NOW - 7201),
@@ -120,6 +139,7 @@ class HostedApiTests(unittest.TestCase):
             cases = [
                 ("{}", {"Content-Type": "text/plain"}, 415),
                 ("{", {"Content-Type": "application/json"}, 400),
+                ("[]", {"Content-Type": "application/json"}, 400),
                 ("{}", {"Content-Type": "application/json", "Origin": "https://elsewhere.example"}, 403),
             ]
             for body, headers, expected in cases:
@@ -128,3 +148,51 @@ class HostedApiTests(unittest.TestCase):
                     self.assertEqual(status, expected)
                     self.assertIn("error", data)
             generate.assert_not_called()
+
+    def test_city_search_keeps_usable_rows_and_reports_provider_failures(self):
+        london = {"name": "London", "latitude": 51.5, "longitude": -0.12}
+        with patch("server.remote", side_effect=[
+            {"results": [None, {}, {**london, "latitude": 95}, london]}, None, {},
+        ]) as provider:
+            path = "/api/locations?q=London"
+            self.assertEqual(self.request("GET", "/api/locations?q=L"), (200, []))
+            provider.assert_not_called()
+            self.assertEqual(self.request("GET", path), (200, [
+                dict(name="London", lat=51.5, lon=-0.12, country="", region="")]))
+            self.assertEqual(self.request("GET", path)[0], 503)
+            self.assertEqual(self.request("GET", path), (200, []))
+
+    def test_invalid_assistant_context_is_rejected_before_provider_access(self):
+        body = {"location": {**LOCATION, "name": "Delhi"}, "question": "Plan my commute"}
+        with patch.dict("os.environ", AIRWISE_MODEL_URL="https://model.example"), patch("server.remote") as provider:
+            for invalid in [{"profile": []}, {"history": [None]}, {"question": None}]:
+                with self.subTest(invalid=invalid):
+                    status, _ = self.request("POST", "/api/assistant", json.dumps({**body, **invalid}),
+                                             {"Content-Type": "application/json"})
+                    self.assertEqual(status, 400)
+            provider.assert_not_called()
+
+    def test_assistant_uses_approved_actions_and_handles_malformed_model_replies(self):
+        body = json.dumps({"location": {**LOCATION, "name": "Delhi"}, "question": "Plan my commute"})
+        with patch("server.inference_url", return_value="https://model.example"), patch.dict(
+                "os.environ", AIRWISE_MODEL_URL="https://model.example"), patch("server.air", return_value=report(aqi=155)):
+            for content, status in [('{"actions":["errands"]}', 200), ('{"actions":["unknown"]}', 503),
+                                    ('{"actions":"errands"}', 503), (None, 503)]:
+                with self.subTest(content=content), patch("server.remote", return_value={"choices": [{"message": {"content": content}}]}):
+                    code, result = self.request("POST", "/api/assistant", body, {"Content-Type": "application/json"})
+                    self.assertEqual(code, status)
+                    if status == 200:
+                        self.assertIn("Combine essential errands", result["answer"])
+
+
+class DesktopAlertTests(unittest.TestCase):
+    def test_invalid_updates_preserve_saved_preferences(self):
+        data = dict(enabled=False, threshold="101", location={**LOCATION, "name": "Delhi"})
+        with TemporaryDirectory() as folder, patch.object(server, "DATA", Path(folder)), patch.object(server, "wake_monitor") as wake:
+            saved = server.configure_alerts(data)
+            self.assertEqual(saved["threshold"], 101)
+            for invalid in [False, 101.5, -1]:
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    server.configure_alerts({**data, "threshold": invalid})
+            self.assertEqual(server.read_alerts(), saved)
+            wake.set.assert_called_once()

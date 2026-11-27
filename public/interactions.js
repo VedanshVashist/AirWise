@@ -107,10 +107,10 @@ async function loadAir(changed = false) {
 }
 
 function browserNotify() {
-    if (source !== 'Current estimate' || !isFreshReading(data?.current)) return;
+    const n = currentEstimate(source, data?.current);
+    if (n === null) return;
     if (alertConfig.desktop || !get('browserAlerts', false) || !('Notification' in window) || Notification.permission !== 'granted') return;
-    const key = cacheKey() + '/' + data.current.time,
-        n = aqi();
+    const key = cacheKey() + '/' + data.current.time;
     if (get('lastAlert', '') === key || n < get('threshold', 101)) return;
     let body = precautions()[0][1];
     try {
@@ -274,7 +274,7 @@ async function ask(question) {
         if (version === chatVersion) messages.push({
             role: 'assistant',
             label: 'Local guide · AI unavailable',
-            content: `${a.detail} ${a.impact} ${source==='Current estimate'?`The current modeled US AQI for ${loc.name} is ${aqi()}.`:'Check your local AQI before going outdoors.'}`
+            content: `${a.detail} ${a.impact} ${currentEstimate(source, data?.current) !== null ? `The current modeled US AQI for ${loc.name} is ${aqi()}.` : 'Check your local AQI before going outdoors.'}`
         });
     } finally {
         if (version === chatVersion) {
@@ -285,15 +285,32 @@ async function ask(question) {
 }
 
 function menu(open) {
+    const wasOpen = $('#sidebar').classList.contains('open');
     $('#sidebar').classList.toggle('open', open);
     document.body.classList.toggle('menuopen', open);
     $('#menu').setAttribute('aria-expanded', String(open));
+    $('.workspace').inert = open;
+    if (open) $('#sidebar [aria-current="page"]').focus();
+    else if (wasOpen) $('#menu').focus();
 }
 $('#menu').onclick = () => menu(true);
+$('#close-menu').onclick = () => menu(false);
 $('#scrim').onclick = () => menu(false);
+$('#sidebar').addEventListener('click', event => {
+    if (event.target.closest('a')) menu(false);
+});
+window.addEventListener('resize', () => {
+    if (window.innerWidth > 760 && $('#sidebar').classList.contains('open')) menu(false);
+});
+$('.skip').addEventListener('click', event => {
+    event.preventDefault();
+    menu(false);
+    main.focus();
+});
 window.addEventListener('hashchange', () => {
     menu(false);
     render();
+    main.focus();
     window.scrollTo(0, 0);
     if (route() === 'alerts') loadAlerts();
 });
@@ -315,7 +332,7 @@ document.addEventListener('click', e => {
         }
         b.disabled = true;
         navigator.geolocation.getCurrentPosition(pos => {
-            if (dialog.open) choose({
+            if (dialog.open && b.isConnected) choose({
                 name: 'Current location',
                 country: '',
                 lat: +pos.coords.latitude.toFixed(4),
