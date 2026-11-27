@@ -79,7 +79,7 @@ async function loadAir(changed = false) {
     loadObservation(seq);
     if (changed || !data) {
         const cached = get(key, null);
-        if (cached?.current) {
+        if (hasReading(cached?.current)) {
             data = cached;
             source = 'Saved reading';
         } else if (loc.lat === cities[0].lat && loc.lon === cities[0].lon) {
@@ -92,9 +92,9 @@ async function loadAir(changed = false) {
         refreshDataViews();
     }
     try {
-        let fresh = await api(`air?lat=${encodeURIComponent(loc.lat)}&lon=${encodeURIComponent(loc.lon)}`);
+        const fresh = await api(`air?lat=${encodeURIComponent(loc.lat)}&lon=${encodeURIComponent(loc.lon)}`);
         if (seq !== airRequest) return;
-        if (!Number.isFinite(fresh.current?.us_aqi) || Math.abs(Date.now() / 1000 - fresh.current.time) > 7200) throw Error();
+        if (!isFreshReading(fresh?.current)) throw Error('Invalid current estimate.');
         data = fresh;
         source = 'Current estimate';
         set(key, fresh);
@@ -107,6 +107,7 @@ async function loadAir(changed = false) {
 }
 
 function browserNotify() {
+    if (source !== 'Current estimate' || !isFreshReading(data?.current)) return;
     if (alertConfig.desktop || !get('browserAlerts', false) || !('Notification' in window) || Notification.permission !== 'granted') return;
     const key = cacheKey() + '/' + data.current.time,
         n = aqi();

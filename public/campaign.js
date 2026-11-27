@@ -45,8 +45,7 @@ function campaign() {
 function campaignReading() {
     const value = aqi();
     const stamp = data?.current?.time;
-    const fresh = source === 'Current estimate' && Number.isFinite(stamp) &&
-        Math.abs(Date.now() / 1000 - stamp) <= 7200 && value !== null;
+    const fresh = source === 'Current estimate' && isFreshReading(data?.current);
     if (!fresh) return `${loc.name} · Current AQI unavailable. Check local air advisories before heading out.`;
     const time = new Date(stamp * 1000).toLocaleString('en-GB', {
         timeZone: data.timezone || 'UTC', dateStyle: 'medium', timeStyle: 'short'

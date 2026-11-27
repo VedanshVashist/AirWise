@@ -222,10 +222,7 @@ function tips() {
 }
 
 function points() {
-    return (data?.hourly?.time || []).map((t, i) => ({
-        t,
-        v: data.hourly.us_aqi[i]
-    })).filter(p => p.t >= data.current.time && p.t < data.current.time + hours * 3600 && Number.isFinite(p.v));
+    return forecastPoints(data, hours);
 }
 
 function plot() {

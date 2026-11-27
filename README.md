@@ -34,8 +34,6 @@ Sign in to the OpenAI API platform as the project owner and create a dedicated p
 
 Every paid campaign call first reserves a slot in a shared Redis transaction. Anyone using the public app can consume these slots. Failed model calls also use a slot. Missing credentials, exhausted quota and provider failures select a labeled template. OpenAI receives the selected audience and a fixed writing instruction. The city, coordinates and AQI stay out of that request. The separate assistant endpoint has its own configuration and does not use the campaign key. [Upstash REST API](https://upstash.com/docs/redis/features/restapi)
 
-Run `python -m unittest -v` for offline campaign-provider and quota tests. Run `node --test campaign.test.cjs` for the freshness and attribution checks.
-
 ### Start the server
 
 Install Python 3.11 or newer. The dashboard uses the Python standard library and can run without the optional AI model.
@@ -66,6 +64,17 @@ On Windows x64, run `python setup_ai.py` to download and verify the CPU runtime 
 To use another inference server, set `AIRWISE_MODEL_URL` to its OpenAI-compatible base URL including `/v1`, and set `AIRWISE_MODEL` to its model name. Set `AIRWISE_MODEL_KEY` only if the service requires it. That server must support structured JSON outputs. Using a remote model sends the question, recent conversation, location name, AQI and selected lifestyle preferences to that provider.
 
 The application binds to the loopback interface. Household preferences and action history are stored in browser storage. Desktop alert settings and recent alerts are stored in `.airwise/alerts.json`. City searches and coordinates are sent to Open-Meteo for air data.
+
+## Testing
+
+From the repository root, run both suites with Python 3.11+ and Node.js 22. The tests run offline using the standard libraries. They require no API keys or model downloads.
+
+```sh
+python -m unittest discover -v
+node --test
+```
+
+Python tests exercise the hosted HTTP handler on a temporary loopback port, AQI cache expiry, sensor selection, and campaign provider and quota behavior. Node tests cover dashboard refreshes and outages, hourly forecast windows, and campaign attribution. The GitHub Actions workflow runs both suites on Windows and Ubuntu for pushes and pull requests.
 
 ## Sources
 

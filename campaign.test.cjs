@@ -4,12 +4,12 @@ const { readFileSync } = require('node:fs');
 const vm = require('node:vm');
 
 function reading(source, ageSeconds = 0) {
-    const script = readFileSync('public/campaign.js', 'utf8');
+    const script = ['air-data.js', 'campaign.js'].map(file => readFileSync('public/' + file, 'utf8')).join('\n');
     return vm.runInNewContext(script + '\ncampaignReading()', {
         document: { addEventListener() {} },
         loc: { name: 'Delhi' }, source, aqi: () => 152,
         band: () => 3, bandNames: [null, null, null, 'Unhealthy'],
-        data: { current: { time: Date.now() / 1000 - ageSeconds }, timezone: 'Asia/Kolkata' }
+        data: { current: { time: Date.now() / 1000 - ageSeconds, us_aqi: 152 }, timezone: 'Asia/Kolkata' }
     });
 }
 

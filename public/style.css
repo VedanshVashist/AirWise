@@ -1387,3 +1387,60 @@ dialog::backdrop {
     }
 }
 .campaign-art { display: block; width: 100%; height: auto; border-radius: 8px; margin-bottom: 1rem; }
+
+#theme-toggle .sun,
+[data-theme="dark"] #theme-toggle .moon {
+    display: none;
+}
+
+[data-theme="dark"] #theme-toggle .sun {
+    display: block;
+}
+
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --canvas: #101a19;
+    --surface: #192725;
+    --raised: #253631;
+    --ink: #edf4ef;
+    --muted: #aec0b7;
+    --line: #384c44;
+    --leaf: #99dfb6;
+}
+
+[data-theme="dark"] :is(.topbar, .card, .action, dialog, .skip) {
+    background-color: var(--surface);
+}
+
+[data-theme="dark"] :is(.button, .polltile, .seg, .field input, .field select,
+    .searchbox, .composer textarea, .summarybox, .message:not(.user)) {
+    background-color: var(--raised);
+    border-color: var(--line);
+}
+
+[data-theme="dark"] :is(.crumb, .toptools, .axis, .legend, .footer, .action .eyebrow, .seg button) {
+    color: var(--muted);
+}
+
+[data-theme="dark"] .crumb b {
+    color: var(--ink);
+}
+
+[data-theme="dark"] :is(.textbutton, .titleline > .ic, .summarybox .ic, .actionlink .ic) {
+    color: var(--leaf);
+}
+
+[data-theme="dark"] :is(.softbutton, .avatar, .seg button.on, .impact,
+    .button:hover, .iconbutton:hover, .result:hover) {
+    background-color: #304a3e;
+    color: #c2f1d2;
+}
+
+[data-theme="dark"] .avatar { border-color: var(--line); }
+[data-theme="dark"] .tone0 { background: #483426; color: #f5c28c; }
+[data-theme="dark"] .tone1 { background: #2a4033; color: #a9dbb8; }
+[data-theme="dark"] .tone2 { background: #393348; color: #d2c3ef; }
+[data-theme="dark"] .plot line { stroke: var(--line); }
+[data-theme="dark"] .plot text { fill: var(--muted); }
+[data-theme="dark"] .plot path[stroke] { stroke: var(--leaf); }
+[data-theme="dark"] .plot circle:first-of-type { fill: var(--leaf); }

@@ -23,6 +23,9 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / ".airwise"
 PUBLIC = ROOT / "public"
 POLLUTANTS = "pm2_5,pm10,nitrogen_dioxide,ozone"
+MAX_READING_AGE = 7200
+CACHE_TTL = 600
+CACHE_CAPACITY = 100
 cache = {}
 lock = threading.RLock()
 model_lock = threading.Lock()
@@ -42,32 +45,48 @@ def remote(url, payload=None, timeout=12):
     if body is not None and model_url and model_key and url == model_url.rstrip("/") + "/chat/completions":
         request.add_unredirected_header("Authorization", "Bearer " + model_key)
     with urllib.request.urlopen(request, timeout=timeout) as result:
-        return json.load(result)
+        try:
+            return json.load(result)
+        except ValueError as error:
+            raise RuntimeError("The service returned invalid JSON.") from error
 
 
 def coordinates(data):
-    lat, lon = float(data["lat"]), float(data["lon"])
+    try:
+        if isinstance(data["lat"], bool) or isinstance(data["lon"], bool):
+            raise ValueError
+        lat, lon = float(data["lat"]), float(data["lon"])
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise ValueError("Choose a valid location.") from error
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise ValueError("Choose a valid location.")
     return round(lat, 4), round(lon, 4)
+
+
+def fresh_reading(result, now):
+    current = result.get("current") if isinstance(result, dict) else None
+    if not isinstance(current, dict):
+        return False
+    aqi, stamp = current.get("us_aqi"), current.get("time")
+    return (type(aqi) in (int, float) and 0 <= aqi < math.inf
+            and type(stamp) in (int, float) and now - MAX_READING_AGE <= stamp <= now)
 
 
 def air(location):
     coords = coordinates(location)
     with lock:
         saved = cache.get(coords)
-    if saved and time.time() - saved[0] < 600:
-        return saved[1]
+        if saved and time.monotonic() - saved[0] < CACHE_TTL and fresh_reading(saved[1], time.time()):
+            return saved[1]
     query = urlencode(dict(latitude=coords[0], longitude=coords[1], current="us_aqi," + POLLUTANTS,
                            hourly="us_aqi", past_days=1, forecast_days=4, timezone="auto", timeformat="unixtime"))
     result = remote("https://air-quality-api.open-meteo.com/v1/air-quality?" + query)
-    current = result["current"]
-    if current.get("us_aqi") is None or abs(time.time() - current["time"]) > 7200:
+    if not fresh_reading(result, time.time()):
         raise RuntimeError("A fresh reading is unavailable.")
     with lock:
-        if len(cache) > 100:
-            cache.clear()
-        cache[coords] = time.time(), result
+        if coords not in cache and len(cache) >= CACHE_CAPACITY:
+            del cache[min(cache, key=lambda key: cache[key][0])]
+        cache[coords] = time.monotonic(), result
     return result
 
 
@@ -82,7 +101,10 @@ def observation(location):
         try:
             if str(row["location"]["indoor"]) != "0":
                 continue
-            stamp = datetime.fromisoformat(row["timestamp"]).replace(tzinfo=timezone.utc).timestamp()
+            observed = datetime.fromisoformat(row["timestamp"])
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            stamp = observed.timestamp()
             if not 0 <= now - stamp <= 900 or (latest and stamp <= latest["time"]):
                 continue
             values = {v["value_type"]: float(v["value"]) for v in row["sensordatavalues"]

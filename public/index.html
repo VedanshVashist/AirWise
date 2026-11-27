@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#112a2c">
   <title>Airwise · Air quality overview</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
+  <script defer src="air-data.js"></script>
   <script defer src="app.js"></script>
   <script defer src="campaign.js"></script>
   <script defer src="interactions.js"></script>
@@ -32,7 +34,13 @@
   <div class="workspace">
     <header class="topbar">
       <div class="crumb"><button class="mobile-menu iconbutton" id="menu" aria-label="Open navigation"><i data-i="menu"></i></button><i data-i="panel"></i><span>Workspace</span><i data-i="chevRight"></i><b id="crumb">Overview</b></div>
-      <div class="toptools"><span id="date"></span><span class="bar"></span><a class="iconbutton" href="#alerts" aria-label="Open air alerts"><i data-i="bell"></i></a><a class="avatar" href="#household" aria-label="Household profile"><i data-i="users"></i></a></div>
+      <div class="toptools"><span id="date"></span><span class="bar"></span>
+        <button type="button" class="iconbutton" id="theme-toggle" aria-label="Dark mode" aria-pressed="false" title="Toggle dark mode">
+          <svg class="ic moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14A8.8 8.8 0 0 1 10 3.5 9 9 0 1 0 20.5 14Z"/></svg>
+          <svg class="ic sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg>
+        </button>
+        <a class="iconbutton" href="#alerts" aria-label="Open air alerts"><i data-i="bell"></i></a><a class="avatar" href="#household" aria-label="Household profile"><i data-i="users"></i></a>
+      </div>
     </header>
     <main id="main" tabindex="-1"></main>
   </div>
