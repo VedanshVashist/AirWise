@@ -1,15 +1,16 @@
-# Downloaded AI runtime, model weights and local alert history
-.airwise/
+# Local model downloads, runtime binaries and saved alert settings
+/.airwise/
 
 # Python bytecode and local virtual environments
 __pycache__/
-*.pyc
-*.pyo
+*.py[co]
 .venv/
 venv/
 
-# Local configuration and logs
-.vercel/
+# Vercel CLI project settings and build output
+/.vercel/
+
+# Local credentials and logs
 .env
 .env.*
 .aws/
@@ -19,3 +20,7 @@ venv/
 *.p12
 *.pfx
 *.log
+
+# Windows Explorer metadata
+Thumbs.db
+Desktop.ini
