@@ -2,6 +2,7 @@
 import argparse
 import base64
 import json
+import logging
 import math
 import os
 import subprocess
@@ -11,6 +12,7 @@ import webbrowser
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from urllib.parse import parse_qs, urlencode, urlsplit
 from xml.etree import ElementTree
 
@@ -30,7 +32,7 @@ cache_lock = threading.Lock()
 alerts_lock = threading.Lock()
 
 
-def coordinates(data):
+def coordinates(data: dict) -> tuple[float, float]:
     try:
         if isinstance(data["lat"], bool) or isinstance(data["lon"], bool):
             raise ValueError
@@ -42,7 +44,7 @@ def coordinates(data):
     return round(lat, 4), round(lon, 4)
 
 
-def fresh_reading(result, now):
+def fresh_reading(result: object, now: float) -> bool:
     current = result.get("current") if isinstance(result, dict) else None
     if not isinstance(current, dict):
         return False
@@ -51,7 +53,7 @@ def fresh_reading(result, now):
             and type(stamp) in (int, float) and now - MAX_READING_AGE <= stamp <= now)
 
 
-def air(location):
+def air(location: dict) -> dict:
     coords = coordinates(location)
     with cache_lock:
         saved = cache.get(coords)
@@ -72,7 +74,7 @@ def air(location):
     return result
 
 
-def observation(location):
+def observation(location: dict) -> dict:
     lat, lon = coordinates(location)
     rows = remote(f"https://data.sensor.community/airrohr/v1/filter/area={lat},{lon},10")
     if not isinstance(rows, list):
@@ -99,7 +101,7 @@ def observation(location):
     return {"source": "Sensor.Community", "radius_km": 10, "unit": "µg/m³", "observation": latest}
 
 
-def search_locations(query):
+def search_locations(query: str) -> list[dict]:
     name = query.strip()[:100]
     if len(name) < 2:
         return []
@@ -120,12 +122,12 @@ def search_locations(query):
     return locations
 
 
-def rounded_aqi(current):
+def rounded_aqi(current: dict) -> int:
     """Match the dashboard's Math.round at category and notification thresholds."""
     return math.floor(current["us_aqi"] + 0.5)
 
 
-def precaution(aqi):
+def precaution(aqi: int) -> str:
     if aqi > 300:
         return "Avoid outdoor physical activity and use the cleanest indoor space available."
     if aqi > 200:
@@ -139,21 +141,26 @@ def precaution(aqi):
     return "Outdoor activities are generally suitable. Check again before a long outing."
 
 
-def read_alerts():
+def read_alerts() -> dict:
     try:
         return json.loads((DATA / "alerts.json").read_text(encoding="utf8"))
     except (OSError, ValueError):
         return {"enabled": False, "threshold": 101, "history": []}
 
 
-def save_alerts(value):
+def save_alerts(value: dict) -> None:
     DATA.mkdir(exist_ok=True)
-    path = DATA / "alerts.tmp"
-    path.write_text(json.dumps(value), encoding="utf8")
-    path.replace(DATA / "alerts.json")
+    pending = NamedTemporaryFile(mode="w", encoding="utf8", dir=DATA, delete=False)
+    path = Path(pending.name)
+    try:
+        with pending:
+            json.dump(value, pending)
+        path.replace(DATA / "alerts.json")
+    finally:
+        path.unlink(missing_ok=True)
 
 
-def configure_alerts(data):
+def configure_alerts(data: dict) -> dict:
     loc = data["location"]
     lat, lon = coordinates(loc)
     threshold = data["threshold"]
@@ -173,7 +180,7 @@ def configure_alerts(data):
     return config
 
 
-def desktop_notice(title, body):
+def desktop_notice(title: str, body: str) -> bool:
     toast = ElementTree.Element("toast")
     binding = ElementTree.SubElement(ElementTree.SubElement(toast, "visual"), "binding", template="ToastGeneric")
     for line in (title, body):
@@ -201,43 +208,58 @@ def desktop_notice(title, body):
 wake_monitor = threading.Event()
 
 
-def monitor():
+def check_desktop_alert() -> None:
+    with alerts_lock:
+        config = read_alerts()
+    if not config["enabled"]:
+        return
+
+    location = config["location"]
+    try:
+        current = air(location)["current"]
+        aqi = rounded_aqi(current)
+    except (OSError, ValueError, RuntimeError, KeyError):
+        with alerts_lock:
+            if read_alerts() == config:
+                config["error"] = "Airwise could not check the AQI or deliver the latest alert. It will retry."
+                save_alerts(config)
+        return
+
+    stamp = [*coordinates(location), current["time"]]
+    if aqi < config["threshold"] or stamp == config.get("last"):
+        return
+
+    with alerts_lock:
+        # The user can switch cities or disable alerts during the provider request.
+        if read_alerts() != config:
+            return
+        city = location["name"]
+        body = precaution(aqi)
+        try:
+            delivered = desktop_notice(f"Airwise · {city} · US AQI {aqi}", body)
+        except (OSError, subprocess.SubprocessError):
+            delivered = False
+        entry = dict(time=current["time"], city=city, aqi=aqi, body=body)
+        config["history"] = [entry, *config["history"]][:20]
+        config["last"] = stamp
+        if delivered:
+            config.pop("error", None)
+        else:
+            config["error"] = "Your AQI alert is saved here. Enable Windows notifications for PowerShell to receive desktop alerts."
+        save_alerts(config)
+
+
+def monitor() -> None:
     while True:
         try:
-            with alerts_lock:
-                config = read_alerts()
-            if config["enabled"]:
-                loc = config["location"]
-                current = air(loc)["current"]
-                aqi = rounded_aqi(current)
-                stamp = [*coordinates(loc), current["time"]]
-                if aqi >= config["threshold"] and config.get("last") != stamp:
-                    body = precaution(aqi)
-                    with alerts_lock:
-                        check = read_alerts()
-                        if check == config:
-                            try:
-                                delivered = desktop_notice(f"Airwise · {loc['name']} · US AQI {aqi}", body)
-                            except (OSError, subprocess.SubprocessError):
-                                delivered = False
-                            config["last"] = stamp
-                            config["history"] = ([dict(time=current["time"], city=loc["name"], aqi=aqi, body=body)] + config["history"])[:20]
-                            if delivered:
-                                config.pop("error", None)
-                            else:
-                                config["error"] = "Your AQI alert is saved here. Enable Windows notifications for PowerShell to receive desktop alerts."
-                            save_alerts(config)
-        except (OSError, ValueError, RuntimeError, KeyError, subprocess.SubprocessError) as error:
-            with alerts_lock:
-                state = read_alerts()
-                if state.get("enabled"):
-                    state["error"] = "Airwise could not check the AQI or deliver the latest alert. It will retry."
-                    save_alerts(state)
+            check_desktop_alert()
+        except (OSError, ValueError, KeyError, TypeError):
+            logging.exception("Could not read or save desktop alert settings")
         wake_monitor.wait(600)
         wake_monitor.clear()
 
 
-def model_content(reply):
+def model_content(reply: dict) -> str:
     try:
         content = reply["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as error:
@@ -247,7 +269,7 @@ def model_content(reply):
     return content.strip()
 
 
-def guided_answer(url, messages, reading, loc, profile):
+def guided_answer(url: str, messages: list[dict], reading: int, loc: dict, profile: dict) -> dict[str, str]:
     """Let the model compose a plan from actions suitable for the current AQI."""
     choices = {
         "outdoors": precaution(reading) + " Moving exertion into cleaner air reduces the amount of polluted air inhaled.",
@@ -287,7 +309,7 @@ def guided_answer(url, messages, reading, loc, profile):
             "mode": "AI-guided plan"}
 
 
-def answer(data):
+def answer(data: dict) -> dict[str, str]:
     question = data.get("question")
     if not isinstance(question, str) or not question.strip():
         raise ValueError("Enter a question.")
@@ -368,7 +390,8 @@ class Handler(SimpleHTTPRequestHandler):
                 if self.hosted:
                     return self.json_response({"desktop": False, "enabled": False, "threshold": 101, "history": []})
                 with alerts_lock:
-                    return self.json_response({**read_alerts(), "desktop": os.name == "nt"})
+                    settings = read_alerts()
+                return self.json_response({**settings, "desktop": os.name == "nt"})
             return self.json_response({"error": "Unknown route."}, 404)
         except (ValueError, KeyError):
             return self.json_response({"error": "Invalid location or upstream data."}, 400)

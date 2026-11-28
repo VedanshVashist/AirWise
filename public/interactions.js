@@ -11,13 +11,61 @@ function assistant() {
     return head('Airwise assistant', 'Ask about cleaner air at home, on the move, or in your community.') + `<section class="card wide"><div class="cardhead">${cardTitle('spark','Ask Airwise')}<span class="muted">${esc(loc.name)}</span></div><div class="talk" id="talk" role="log" aria-live="polite">${messages.length?messages.map(m=>`<div class="message ${m.role}"><small>${esc(m.label)}</small>${esc(m.content)}</div>`).join(''):`<div class="message"><small>Airwise</small>What would you like to plan for your household in ${esc(loc.name)}?</div>`}${pending?'<div class="muted" role="status">Preparing your answer…</div>':''}</div><div class="promptlist">${prompts.map((p,i)=>`<button class="button" data-prompt="${i}" ${pending?'disabled':''}>${p}</button>`).join('')}</div><form class="composer" id="chatForm"><textarea rows="1" name="question" aria-label="Question for Airwise" placeholder="Ask about your air, routines, or household…" required maxlength="1200" ${pending?'disabled':''}></textarea><button class="primary" ${pending?'disabled':''}>Send ${icon('send')}</button></form></section>`;
 }
 
-function alerts() {
-    let native = alertConfig.desktop,
-        enabled = native ? alertConfig.enabled : get('browserAlerts', false),
-        threshold = native ? alertConfig.threshold : get('threshold', 101);
-    let history = native ? alertConfig.history : get('browserHistory', []);
-    return head('Air alerts', 'Get the current AQI and a practical precaution for your saved location.', locationButton()) + `<div class="sectiongrid"><form class="card formcard" id="alertForm">${cardTitle('bell','Notification settings')}<label class="field"><span>Delivery</span><select name="enabled">${options(['Off',native?'Windows desktop notifications':'Browser notifications'],enabled?(native?'Windows desktop notifications':'Browser notifications'):'Off')}</select><small>${native?'Airwise checks every 10 minutes while the local server is running, including when this tab is closed.':'Airwise checks every 10 minutes while this page is open. Browser permission is required.'}</small></label><label class="field"><span>Notify me at</span><select name="threshold">${[[0,'Every new reading'],[51,'Moderate or above · 51+'],[101,'Sensitive groups or above · 101+'],[151,'Unhealthy or above · 151+'],[201,'Very unhealthy or above · 201+'],[301,'Hazardous · 301+']].map(([n,s])=>`<option value="${n}" ${threshold===n?'selected':''}>${s}</option>`).join('')}</select></label><div class="muted">Alert location · ${esc(enabled&&native&&alertConfig.location?alertConfig.location.name:cityName())}</div><button class="primary" ${alertsReady?'':'disabled'}>Save alerts ${icon('check')}</button></form><section class="card">${cardTitle('clock','Recent alerts')}${alertConfig.error?`<p class="impact">${esc(alertConfig.error)}</p>`:''}${history?.length?history.map(h=>`<div class="historyentry"><b>${esc(h.city)} · US AQI ${esc(h.aqi)}</b><small class="sub"> · ${new Date(h.time*1000).toLocaleString()}</small><p class="muted">${esc(h.body)}</p></div>`).join(''):'<p class="empty">Delivered AQI alerts will appear here.</p>'}</section></div>`;
+const alertThresholds = [
+    [0, 'Every new reading'],
+    [51, 'Moderate or above · 51+'],
+    [101, 'Sensitive groups or above · 101+'],
+    [151, 'Unhealthy or above · 151+'],
+    [201, 'Very unhealthy or above · 201+'],
+    [301, 'Hazardous · 301+']
+];
+
+function alertHistoryEntry(entry) {
+    const time = new Date(entry.time * 1000).toLocaleString();
+    return `<div class="historyentry">
+        <b>${esc(entry.city)} · US AQI ${esc(entry.aqi)}</b><small class="sub"> · ${time}</small>
+        <p class="muted">${esc(entry.body)}</p>
+    </div>`;
 }
+
+function alerts() {
+    const desktop = alertConfig.desktop;
+    const enabled = desktop ? alertConfig.enabled : get('browserAlerts', false);
+    const threshold = desktop ? alertConfig.threshold : get('threshold', 101);
+    const history = desktop ? alertConfig.history : get('browserHistory', []);
+    const delivery = desktop ? 'Windows desktop notifications' : 'Browser notifications';
+    const instructions = desktop
+        ? 'Airwise checks every 10 minutes while the local server is running, including when this tab is closed.'
+        : 'Airwise checks every 10 minutes while this page is open. Browser permission is required.';
+    const city = enabled && desktop && alertConfig.location ? alertConfig.location.name : cityName();
+    const thresholdOptions = alertThresholds.map(([value, label]) =>
+        `<option value="${value}" ${threshold === value ? 'selected' : ''}>${label}</option>`
+    ).join('');
+    const entries = history?.length ? history.map(alertHistoryEntry).join('')
+        : '<p class="empty">Delivered AQI alerts will appear here.</p>';
+
+    return head('Air alerts', 'Get the current AQI and a practical precaution for your saved location.', locationButton()) + `
+        <div class="sectiongrid">
+            <form class="card formcard" id="alertForm">
+                ${cardTitle('bell', 'Notification settings')}
+                <label class="field"><span>Delivery</span>
+                    <select name="enabled">${options(['Off', delivery], enabled ? delivery : 'Off')}</select>
+                    <small>${instructions}</small>
+                </label>
+                <label class="field"><span>Notify me at</span>
+                    <select name="threshold">${thresholdOptions}</select>
+                </label>
+                <div class="muted">Alert location · ${esc(city)}</div>
+                <button class="primary" ${alertsReady ? '' : 'disabled'}>Save alerts ${icon('check')}</button>
+            </form>
+            <section class="card">
+                ${cardTitle('clock', 'Recent alerts')}
+                ${alertConfig.error ? `<p class="impact">${esc(alertConfig.error)}</p>` : ''}
+                ${entries}
+            </section>
+        </div>`;
+}
+
 const pages = {
     campaign,
     overview,

@@ -186,9 +186,45 @@ class HostedApiTests(unittest.TestCase):
 
 
 class DesktopAlertTests(unittest.TestCase):
+    def setUp(self) -> None:
+        folder = self.enterContext(TemporaryDirectory())
+        self.enterContext(patch.object(server, "DATA", Path(folder)))
+        self.settings = dict(enabled=True, threshold=101, history=[],
+                             location={**LOCATION, "name": "Delhi"})
+
+    def test_provider_failure_after_city_change_preserves_new_settings(self) -> None:
+        updated = {**self.settings, "location": {"lat": 0, "lon": 0, "name": "New city"}}
+
+        def switch_city_before_failure(location):
+            server.save_alerts(updated)
+            raise OSError("Provider offline")
+
+        server.save_alerts(self.settings)
+        with patch("server.air", side_effect=switch_city_before_failure):
+            server.check_desktop_alert()
+        self.assertEqual(server.read_alerts(), updated)
+
+    def test_failed_replace_preserves_previous_settings_and_cleans_temp_file(self) -> None:
+        server.save_alerts(self.settings)
+        with patch.object(Path, "replace", side_effect=OSError), self.assertRaises(OSError):
+            server.save_alerts({**self.settings, "enabled": False})
+        self.assertEqual(server.read_alerts(), self.settings)
+        self.assertEqual(list(server.DATA.iterdir()), [server.DATA / "alerts.json"])
+
+    def test_desktop_failure_records_one_history_entry_for_repeated_reading(self) -> None:
+        server.save_alerts(self.settings)
+        with patch("server.air", return_value=report(aqi=100.5)), patch(
+                "server.desktop_notice", side_effect=OSError) as notify:
+            server.check_desktop_alert()
+            server.check_desktop_alert()
+        notify.assert_called_once()
+        saved = server.read_alerts()
+        self.assertEqual([entry["aqi"] for entry in saved["history"]], [101])
+        self.assertIn("Windows notifications", saved["error"])
+
     def test_invalid_updates_preserve_saved_preferences(self):
         data = dict(enabled=False, threshold="101", location={**LOCATION, "name": "Delhi"})
-        with TemporaryDirectory() as folder, patch.object(server, "DATA", Path(folder)), patch.object(server, "wake_monitor") as wake:
+        with patch.object(server, "wake_monitor") as wake:
             saved = server.configure_alerts(data)
             self.assertEqual(saved["threshold"], 101)
             for invalid in [False, 101.5, -1]:

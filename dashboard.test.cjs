@@ -72,6 +72,19 @@ test('skip link moves focus into the active page and preserves the forecast rout
     assert.equal(context.document.activeElement, elements.get('#main'));
 });
 
+test('browser alerts show the saved threshold and escape local history', async () => {
+    const page = dashboard(() => ({}));
+    await nextTurn();
+    page.context.set('threshold', 151);
+    page.context.set('browserAlerts', true);
+    page.context.set('browserHistory', [{city: '<Example>', aqi: 155, time: 1800000000, body: 'Take breaks.'}]);
+    page.context.location.hash = '#alerts';
+    page.context.render();
+    assert.match(page.markup(), /<option selected>Browser notifications<\/option>/);
+    assert.match(page.markup(), /value="151" selected/);
+    assert.match(page.markup(), /&lt;Example&gt; · US AQI 155/);
+});
+
 test('mobile navigation moves and restores focus and isolates background controls', () => {
     const {context, elements} = dashboard(() => ({}));
     elements.get('#menu').onclick();
